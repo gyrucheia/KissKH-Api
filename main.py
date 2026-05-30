@@ -33,11 +33,11 @@ class KissKHExtractor:
             user_agent=user_agent,
             viewport={"width": 1280, "height": 720},
             ignore_https_errors=True,
-            proxy={
-                "server": "http://31.59.20.176:6754",
-                "username": "azegwqwg",
-                "password": "6307op9kmdyw"
-            },
+            # proxy={
+            #     "server": "http://38.154.203.95:5863",
+            #     "username": "vdzrywud",
+            #     "password": "6ucxlqqfvcj5"
+            # },
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-infobars",
