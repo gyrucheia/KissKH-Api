@@ -324,7 +324,7 @@ app = FastAPI(title="KissKH Direct High-Speed Extractor API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # use your frontend domain instead of * for production to tighten security
     allow_methods=["*"],
     allow_headers=["*"],
 )
