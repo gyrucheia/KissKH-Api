@@ -23,11 +23,11 @@
     },
     {
       "src": "/assets/(.*)",
-      "dest": "/dist/client/assets/$1"
+      "dest": "dist/client/assets/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/dist/server/server.js"
+      "dest": "dist/server/server.js"
     }
   ],
   "env": {
