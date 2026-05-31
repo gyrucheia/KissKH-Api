@@ -1,5 +1,5 @@
 // KissKH API service — single source of truth for all network calls
-export const KISSKH_BASE = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000";
+export const KISSKH_BASE = (import.meta as any).env?.VITE_API_BASE_URL || "https://kiss-kh-api.vercel.app";
 export const KISSKH_DIRECT_BASE = "https://kisskh.do/api";
 export const CORS_PROXY = "https://corsproxy.io/?";
 
