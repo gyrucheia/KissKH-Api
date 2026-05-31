@@ -8,7 +8,7 @@ from typing import Optional, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from playwright.async_api import async_playwright, BrowserContext, Page, Route
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Route
 
 # Force rebuild: v2
 
@@ -59,6 +59,7 @@ HOME_HEADERS = {
 class KissKHExtractor:
     def __init__(self):
         self.playwright = None
+        self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.base_page: Optional[Page] = None
         
@@ -72,13 +73,9 @@ class KissKHExtractor:
     async def start(self):
         self.playwright = await async_playwright().start()
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        
-        self.context = await self.playwright.chromium.launch_persistent_context(
-            user_data_dir="./kisskh_browser_data",
+
+        self.browser = await self.playwright.chromium.launch(
             headless=IS_HEADLESS,
-            user_agent=user_agent,
-            viewport={"width": 1280, "height": 720},
-            ignore_https_errors=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-infobars",
@@ -86,7 +83,12 @@ class KissKHExtractor:
                 "--disable-dev-shm-usage",
                 "--disable-extensions",
                 "--disable-popup-blocking",
-            ]
+            ],
+        )
+        self.context = await self.browser.new_context(
+            user_agent=user_agent,
+            viewport={"width": 1280, "height": 720},
+            ignore_https_errors=True,
         )
 
         await self.context.add_init_script("""
@@ -127,6 +129,7 @@ class KissKHExtractor:
     async def stop(self):
         if self.base_page: await self.base_page.close()
         if self.context: await self.context.close()
+        if self.browser: await self.browser.close()
         if self.playwright: await self.playwright.stop()
 
     async def ensure_started(self):
