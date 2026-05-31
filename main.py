@@ -274,6 +274,11 @@ app.add_middleware(
 #  Endpoints
 # ─────────────────────────────────────────────
 
+@app.get("/")
+async def root_endpoint():
+    """Root endpoint - API welcome message"""
+    return {"message": "KissKH API is running!", "endpoints": {"/api/last-updates": "Latest updates", "/api/home/latest": "Latest dramas", "/api/search": "Search dramas"}}
+
 @app.get("/test")
 async def test():
     """Simple test endpoint to verify app is running"""
