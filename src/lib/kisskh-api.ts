@@ -41,10 +41,9 @@ export interface ResolvedStream {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const apiPath = path.startsWith("/api") ? path : `/api${path}`;
-  const res = await fetch(`${KISSKH_BASE}${apiPath}`);
+  const res = await fetch(`${KISSKH_BASE}${path}`);
   if (!res.ok) {
-    throw new Error(`Request failed (${res.status}): ${apiPath}`);
+    throw new Error(`Request failed (${res.status}): ${path}`);
   }
   return (await res.json()) as T;
 }
