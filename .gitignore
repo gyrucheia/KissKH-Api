@@ -10,3 +10,6 @@ browser_profile/
 .venv/
 venv/
 env/
+
+# KissKH Local Browser Cache
+kisskh_browser_data/

@@ -5,10 +5,16 @@ import httpx
 from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from playwright.async_api import async_playwright, BrowserContext, Page, Route
 
-BASE_URL = "https://kisskh.do"
+BASE_URL = "https://kisskh.do/api"
+WEB_URL = "https://kisskh.do"
 IS_HEADLESS = os.environ.get("HEADLESS", "true").lower() == "true"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+}
 
 class KissKHExtractor:
     def __init__(self):
@@ -33,11 +39,6 @@ class KissKHExtractor:
             user_agent=user_agent,
             viewport={"width": 1280, "height": 720},
             ignore_https_errors=True,
-            # proxy={
-            #     "server": "http://38.154.203.95:5863",
-            #     "username": "vdzrywud",
-            #     "password": "6ucxlqqfvcj5"
-            # },
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-infobars",
@@ -57,7 +58,7 @@ class KissKHExtractor:
         self.base_page = await self.context.new_page()
         try:
             print("Connecting to KissKH and securing Cloudflare clearance...")
-            await self.base_page.goto(BASE_URL, wait_until="domcontentloaded", timeout=45000)
+            await self.base_page.goto(WEB_URL, wait_until="domcontentloaded", timeout=45000)
             
             for _ in range(6):
                 title = await self.base_page.title()
@@ -87,45 +88,6 @@ class KissKHExtractor:
         if self.base_page: await self.base_page.close()
         if self.context: await self.context.close()
         if self.playwright: await self.playwright.stop()
-
-    async def _fetch_api(self, path: str):
-        """Generic helper to call any KissKH API endpoint via browser page context (has Cloudflare cookies)."""
-        return await self.base_page.evaluate(f"""async () => {{
-            const res = await fetch(window.location.origin + "{path}", {{
-                headers: {{ "accept": "application/json" }}
-            }});
-            return await res.json();
-        }}""")
-
-    async def search(self, query: str):
-        return await self._fetch_api(f"/api/DramaList/Search?q={query}&type=0")
-
-    async def get_drama_info(self, drama_id: str):
-        return await self._fetch_api(f"/api/DramaList/Drama/{drama_id}?isq=false")
-
-    async def get_drama_list(
-        self,
-        page: int = 1,
-        drama_type: int = 0,
-        sub: int = 0,
-        country: int = 0,
-        status: int = 0,
-        order: int = 0,
-        page_size: int = 20,
-    ):
-        """
-        drama_type : 0=All, 1=Korean, 2=Chinese, 3=Japanese, 4=Thai, 5=Other
-        sub        : 0=All, 1=Sub, 2=Raw
-        country    : 0=All, 1=Korea, 2=China, 3=Japan, 4=Thailand, 5=Other
-        status     : 0=All, 1=Ongoing, 2=Completed
-        order      : 0=Default, 1=Popular, 2=Updated, 3=New, 4=Year, 5=A-Z
-        """
-        path = (
-            f"/api/DramaList/List"
-            f"?page={page}&type={drama_type}&sub={sub}"
-            f"&country={country}&status={status}&order={order}&pageSize={page_size}"
-        )
-        return await self._fetch_api(path)
 
     async def get_episode_stream(self, episode_id: str, max_retries: int = 3):
         for attempt in range(max_retries):
@@ -193,7 +155,7 @@ class KissKHExtractor:
             await page.route("**/api/DramaList/Drama/*", mock_drama_response)
 
             try:
-                watch_url = f"{BASE_URL}/Drama/Bypass/Episode-1?id=1124&ep={episode_id}&pn=1"
+                watch_url = f"{WEB_URL}/Drama/Bypass/Episode-1?id=1124&ep={episode_id}&pn=1"
                 await page.goto(watch_url, wait_until="domcontentloaded", timeout=25000)
 
                 for _ in range(5):
@@ -216,16 +178,12 @@ class KissKHExtractor:
                     await asyncio.sleep(1.5)
                     continue
 
-                # Wait for subtitle network traffic to complete
                 await asyncio.sleep(2)
 
                 captured_sub = []
-
-                # Method 1: Already sniffed /api/Sub/ from network (best)
                 if sniffed_subtitles:
                     captured_sub = sniffed_subtitles
 
-                # Method 2: Call subtitle API via page context (has Cloudflare cookies)
                 if not captured_sub and sniffed_kkey:
                     try:
                         sub_data = await page.evaluate(f"""async () => {{
@@ -240,7 +198,6 @@ class KissKHExtractor:
                     except Exception as e:
                         print("Subtitle page.evaluate error:", e)
 
-                # Method 3: Embedded in stream JSON
                 if not captured_sub:
                     if isinstance(captured_stream, dict):
                         for key in ["Subtitles", "subtitles", "Tracks", "tracks"]:
@@ -263,12 +220,15 @@ class KissKHExtractor:
 
         return {"error": f"Failed after {max_retries} attempts", "status": 403}
 
+async def fetch_kisskh_api(path: str):
+    async with httpx.AsyncClient() as client:
+        url = f"{BASE_URL}{path}"
+        response = await client.get(url, headers=HEADERS, timeout=15)
+        response.raise_for_status()
+        return response.json()
 
-# ─────────────────────────────────────────────
-#  Keep-alive (Render free tier anti-sleep)
-# ─────────────────────────────────────────────
 async def keep_alive():
-    await asyncio.sleep(30)  # wait for server to fully boot
+    await asyncio.sleep(30)
     port = int(os.environ.get("PORT", 8000))
     url = f"http://localhost:{port}/"
     while True:
@@ -278,82 +238,92 @@ async def keep_alive():
             print("Keep-alive ping ✓")
         except Exception as e:
             print(f"Keep-alive ping failed: {e}")
-        await asyncio.sleep(300)  # every 5 minutes
-
+        await asyncio.sleep(300)
 
 kisskh = KissKHExtractor()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await kisskh.start()
+    # Only start Playwright if headless/vps hosting supports it, otherwise fail gracefully
+    try:
+        await kisskh.start()
+        print("Playwright engine started successfully (local development fallback).")
+    except Exception as e:
+        print(f"Playwright start skipped or failed: {e}. Playwright endpoints will fall back to environment key mode.")
+    
     asyncio.create_task(keep_alive())
     yield
-    await kisskh.stop()
+    try:
+        await kisskh.stop()
+    except Exception:
+        pass
 
-app = FastAPI(title="KissKH Universal Extractor API", lifespan=lifespan)
+app = FastAPI(title="KissKH Direct High-Speed Extractor API", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ─────────────────────────────────────────────
-#  Root
+#  Endpoints
 # ─────────────────────────────────────────────
+
 @app.get("/")
 async def root():
-    return {"message": "KissKH Active. Engine operating cleanly via Main IO Pool!"}
+    return {"message": "KissKH Active. Engine operating cleanly via High-Speed direct API Pool!"}
 
-
-# ─────────────────────────────────────────────
-#  Search
-# ─────────────────────────────────────────────
 @app.get("/search")
 async def api_search(q: str):
-    return await kisskh.search(q)
+    try:
+        return await fetch_kisskh_api(f"/DramaList/Search?q={q}&type=0")
+    except Exception as e:
+        return {"error": f"Search failed: {str(e)}", "status": 500}
 
-
-# ─────────────────────────────────────────────
-#  Drama info
-# ─────────────────────────────────────────────
 @app.get("/info/{drama_id}")
 async def api_info(drama_id: str):
-    return await kisskh.get_drama_info(drama_id)
+    try:
+        return await fetch_kisskh_api(f"/DramaList/Drama/{drama_id}?isq=false")
+    except Exception as e:
+        return {"error": f"Failed to fetch drama info: {str(e)}", "status": 500}
 
-
-# ─────────────────────────────────────────────
-#  Stream resolver
-# ─────────────────────────────────────────────
-@app.get("/resolve/{episode_id}")
-async def api_resolve(episode_id: str):
-    return await kisskh.get_episode_stream(episode_id)
-
-
-# ─────────────────────────────────────────────
-#  Home endpoints
-# ─────────────────────────────────────────────
 @app.get("/home/latest")
 async def api_latest(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40)
 ):
-    """Latest updated dramas."""
-    return await kisskh.get_drama_list(page=page, order=2, status=0, page_size=page_size)
-
+    try:
+        return await fetch_kisskh_api(
+            f"/DramaList/List?page={page}&type=0&sub=0&country=0&status=0&order=2&pageSize={page_size}"
+        )
+    except Exception as e:
+        return {"error": f"Failed to fetch latest dramas: {str(e)}", "status": 500}
 
 @app.get("/home/popular")
 async def api_popular(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40)
 ):
-    """Most popular dramas."""
-    return await kisskh.get_drama_list(page=page, order=1, status=0, page_size=page_size)
-
+    try:
+        return await fetch_kisskh_api(
+            f"/DramaList/List?page={page}&type=0&sub=0&country=0&status=0&order=1&pageSize={page_size}"
+        )
+    except Exception as e:
+        return {"error": f"Failed to fetch popular dramas: {str(e)}", "status": 500}
 
 @app.get("/home/new")
 async def api_new(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40)
 ):
-    """Newly added dramas."""
-    return await kisskh.get_drama_list(page=page, order=3, status=0, page_size=page_size)
-
+    try:
+        return await fetch_kisskh_api(
+            f"/DramaList/List?page={page}&type=0&sub=0&country=0&status=0&order=3&pageSize={page_size}"
+        )
+    except Exception as e:
+        return {"error": f"Failed to fetch new dramas: {str(e)}", "status": 500}
 
 @app.get("/home/ongoing")
 async def api_ongoing(
@@ -361,9 +331,12 @@ async def api_ongoing(
     page_size: int = Query(20, ge=1, le=40),
     country: int = Query(0, ge=0, le=5, description="0=All 1=Korea 2=China 3=Japan 4=Thailand 5=Other")
 ):
-    """Currently airing dramas."""
-    return await kisskh.get_drama_list(page=page, status=1, order=2, country=country, page_size=page_size)
-
+    try:
+        return await fetch_kisskh_api(
+            f"/DramaList/List?page={page}&type=0&sub=0&country={country}&status=1&order=2&pageSize={page_size}"
+        )
+    except Exception as e:
+        return {"error": f"Failed to fetch ongoing dramas: {str(e)}", "status": 500}
 
 @app.get("/home/completed")
 async def api_completed(
@@ -371,13 +344,13 @@ async def api_completed(
     page_size: int = Query(20, ge=1, le=40),
     country: int = Query(0, ge=0, le=5, description="0=All 1=Korea 2=China 3=Japan 4=Thailand 5=Other")
 ):
-    """Completed dramas."""
-    return await kisskh.get_drama_list(page=page, status=2, order=1, country=country, page_size=page_size)
+    try:
+        return await fetch_kisskh_api(
+            f"/DramaList/List?page={page}&type=0&sub=0&country={country}&status=2&order=1&pageSize={page_size}"
+        )
+    except Exception as e:
+        return {"error": f"Failed to fetch completed dramas: {str(e)}", "status": 500}
 
-
-# ─────────────────────────────────────────────
-#  Full browse (all filters)
-# ─────────────────────────────────────────────
 @app.get("/browse")
 async def api_browse(
     page: int = Query(1, ge=1),
@@ -388,12 +361,50 @@ async def api_browse(
     order: int = Query(0, ge=0, le=5, description="0=Default 1=Popular 2=Updated 3=New 4=Year 5=A-Z"),
     page_size: int = Query(20, ge=1, le=40)
 ):
-    """Full browse — all filters exposed."""
-    return await kisskh.get_drama_list(
-        page=page, drama_type=type, sub=sub,
-        country=country, status=status, order=order, page_size=page_size
-    )
+    try:
+        return await fetch_kisskh_api(
+            f"/DramaList/List?page={page}&type={type}&sub={sub}&country={country}&status={status}&order={order}&pageSize={page_size}"
+        )
+    except Exception as e:
+        return {"error": f"Browse failed: {str(e)}", "status": 500}
 
+@app.get("/resolve/{episode_id}")
+async def api_resolve(episode_id: str):
+    # Method 1: Environment Keys (Vercel-ready direct HTTP resolution)
+    stream_key = os.environ.get("KISSKH_STREAM_KEY")
+    sub_key = os.environ.get("KISSKH_SUB_KEY")
+    
+    if stream_key:
+        print("Direct environment keys found. Resolving streams via HTTP requests...")
+        try:
+            async with httpx.AsyncClient() as client:
+                stream_url = f"{BASE_URL}/DramaList/Episode/{episode_id}?kkey={stream_key}"
+                sub_url = f"{BASE_URL}/Sub/{episode_id}?kkey={sub_key or stream_key}"
+                
+                stream_resp = await client.get(stream_url, headers=HEADERS, timeout=15)
+                sub_resp = await client.get(sub_url, headers=HEADERS, timeout=15)
+                
+                return {
+                    "episode_id": episode_id,
+                    "stream": stream_resp.json() if stream_resp.status_code == 200 else None,
+                    "subtitles": sub_resp.json() if sub_resp.status_code == 200 else []
+                }
+        except Exception as e:
+            print(f"Direct resolution failure: {e}")
+
+    # Method 2: Local Playwright Fallback
+    if kisskh.playwright and kisskh.context:
+        print("Playwright active. Resolving streams using headless browser sniffing...")
+        try:
+            return await kisskh.get_episode_stream(episode_id)
+        except Exception as e:
+            return {"error": f"Playwright capture failed: {str(e)}", "status": 500}
+
+    # Method 3: Failed completely
+    return {
+        "error": "Stream resolution requires authentication. On Vercel, please set 'KISSKH_STREAM_KEY' and 'KISSKH_SUB_KEY' environment variables. For local development, make sure Playwright and browser packages are installed.",
+        "status": 403
+    }
 
 if __name__ == "__main__":
     import uvicorn
