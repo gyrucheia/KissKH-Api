@@ -1,9 +1,10 @@
 import json
 import asyncio
 import os
+import time
 import urllib.parse
 import httpx
-from typing import Optional
+from typing import Optional, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,8 @@ from playwright.async_api import async_playwright, BrowserContext, Page, Route
 BASE_URL = "https://kisskh.do/api"
 WEB_URL = "https://kisskh.do"
 IS_HEADLESS = os.environ.get("HEADLESS", "true").lower() == "true"
+CACHE_TTL = 60
+api_cache: dict[str, tuple[float, Any]] = {}
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     "Referer": "https://kisskh.do/",
@@ -225,68 +228,40 @@ class KissKHExtractor:
         return {"error": f"Failed after {max_retries} attempts", "status": 403}
 
 async def fetch_kisskh_api(path: str):
-    """Fetch from KissKH using AllOrigins CORS proxy (best reliability)"""
     url = f"{BASE_URL}{path}"
-    last_error: str = ""
-    
-    # Primary: AllOrigins raw proxy (best chance to return actual JSON)
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        try:
-            encoded_url = urllib.parse.quote(url, safe="")
-            proxy_url = f"https://api.allorigins.win/raw?url={encoded_url}"
-            print(f"Fetching via AllOrigins raw: {url}")
-            response = await client.get(proxy_url, timeout=20)
-            response.raise_for_status()
-            actual_data = json.loads(response.text)
-            print(f"AllOrigins raw fetch successful!")
-            return actual_data
-        except Exception as e:
-            last_error = str(e)
-            print(f"AllOrigins raw fetch failed: {last_error}")
-    
-    # Fallback 1: Playwright browser (uses real browser context)
+    now = time.time()
+    cached = api_cache.get(path)
+    if cached and now - cached[0] < CACHE_TTL:
+        return cached[1]
+
     try:
-        if kisskh.base_page:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
+            print(f"Fetching KissKH directly: {url}")
+            response = await client.get(url, headers=HEADERS)
+            response.raise_for_status()
+            actual_data = response.json()
+            api_cache[path] = (now, actual_data)
+            print(f"Direct fetch successful: {path}")
+            return actual_data
+    except Exception as e:
+        last_error = str(e)
+        print(f"Direct fetch failed: {last_error}")
+
+    if kisskh.base_page and kisskh.context:
+        try:
             print(f"Fallback: Using Playwright to fetch: {url}")
             page = await kisskh.context.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             data = await page.evaluate("() => document.body.innerText")
             await page.close()
             actual_data = json.loads(data)
-            print(f"Playwright fetch successful!")
-            return actual_data
-    except Exception as e:
-        last_error = str(e)
-        print(f"Playwright fallback failed: {last_error}")
-    
-    # Fallback 2: corsproxy.io
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        try:
-            encoded_url = urllib.parse.quote(url, safe="")
-            proxy_url = f"https://corsproxy.io/?{encoded_url}"
-            print(f"Fallback: Trying corsproxy.io: {url}")
-            response = await client.get(proxy_url, headers=HEADERS, timeout=15)
-            response.raise_for_status()
-            actual_data = response.json()
-            print(f"corsproxy.io fetch successful!")
+            api_cache[path] = (now, actual_data)
+            print(f"Playwright fetch successful: {path}")
             return actual_data
         except Exception as e:
             last_error = str(e)
-            print(f"corsproxy.io fallback failed: {last_error}")
-    
-    # Fallback 3: Direct request (may fail due to Cloudflare)
-    try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            print(f"Final fallback: Direct request to: {url}")
-            response = await client.get(url, headers=HEADERS, timeout=20)
-            response.raise_for_status()
-            actual_data = response.json()
-            print(f"Direct request successful!")
-            return actual_data
-    except Exception as e:
-        last_error = str(e)
-        print(f"Direct request failed: {last_error}")
-    
+            print(f"Playwright fallback failed: {last_error}")
+
     return {"error": f"All fetch methods failed for {url}. Last error: {last_error}", "status": 503}
 
 async def keep_alive():
