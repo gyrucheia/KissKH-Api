@@ -271,25 +271,25 @@ app.add_middleware(
 #  Endpoints
 # ─────────────────────────────────────────────
 
-@app.get("/")
+@app.get("/api")
 async def root():
     return {"message": "KissKH Active. Engine operating cleanly via High-Speed direct API Pool!"}
 
-@app.get("/search")
+@app.get("/api/search")
 async def api_search(q: str):
     try:
         return await fetch_kisskh_api(f"/DramaList/Search?q={q}&type=0")
     except Exception as e:
         return {"error": f"Search failed: {str(e)}", "status": 500}
 
-@app.get("/info/{drama_id}")
+@app.get("/api/info/{drama_id}")
 async def api_info(drama_id: str):
     try:
         return await fetch_kisskh_api(f"/DramaList/Drama/{drama_id}?isq=false")
     except Exception as e:
         return {"error": f"Failed to fetch drama info: {str(e)}", "status": 500}
 
-@app.get("/home/latest")
+@app.get("/api/home/latest")
 async def api_latest(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40)
@@ -301,7 +301,7 @@ async def api_latest(
     except Exception as e:
         return {"error": f"Failed to fetch latest dramas: {str(e)}", "status": 500}
 
-@app.get("/home/popular")
+@app.get("/api/home/popular")
 async def api_popular(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40)
@@ -313,7 +313,7 @@ async def api_popular(
     except Exception as e:
         return {"error": f"Failed to fetch popular dramas: {str(e)}", "status": 500}
 
-@app.get("/home/new")
+@app.get("/api/home/new")
 async def api_new(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40)
@@ -325,7 +325,7 @@ async def api_new(
     except Exception as e:
         return {"error": f"Failed to fetch new dramas: {str(e)}", "status": 500}
 
-@app.get("/home/ongoing")
+@app.get("/api/home/ongoing")
 async def api_ongoing(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40),
@@ -338,7 +338,7 @@ async def api_ongoing(
     except Exception as e:
         return {"error": f"Failed to fetch ongoing dramas: {str(e)}", "status": 500}
 
-@app.get("/home/completed")
+@app.get("/api/home/completed")
 async def api_completed(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=40),
@@ -351,7 +351,7 @@ async def api_completed(
     except Exception as e:
         return {"error": f"Failed to fetch completed dramas: {str(e)}", "status": 500}
 
-@app.get("/browse")
+@app.get("/api/browse")
 async def api_browse(
     page: int = Query(1, ge=1),
     type: int = Query(0, ge=0, le=5, description="0=All 1=Korean 2=Chinese 3=Japanese 4=Thai 5=Other"),
@@ -368,7 +368,7 @@ async def api_browse(
     except Exception as e:
         return {"error": f"Browse failed: {str(e)}", "status": 500}
 
-@app.get("/resolve/{episode_id}")
+@app.get("/api/resolve/{episode_id}")
 async def api_resolve(episode_id: str):
     # Method 1: Environment Keys (Vercel-ready direct HTTP resolution)
     stream_key = os.environ.get("KISSKH_STREAM_KEY")
