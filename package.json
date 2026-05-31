@@ -10,7 +10,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "postinstall": "python -m pip install -r requirements.txt && python -m playwright install chromium"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
