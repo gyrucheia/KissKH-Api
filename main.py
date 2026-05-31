@@ -17,6 +17,13 @@ WEB_URL = "https://kisskh.do"
 IS_HEADLESS = os.environ.get("HEADLESS", "true").lower() == "true"
 CACHE_TTL = 60
 api_cache: dict[str, tuple[float, Any]] = {}
+last_fetch_debug: dict[str, Any] = {
+    "last_url": None,
+    "homepage_init": None,
+    "direct_fetch": None,
+    "playwright_fetch": None,
+    "timestamp": None,
+}
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     "Referer": "https://kisskh.do/",
@@ -24,6 +31,21 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "X-Requested-With": "XMLHttpRequest",
     "Origin": "https://kisskh.do",
+    "Connection": "keep-alive",
+    "Cache-Control": "max-age=0",
+}
+HOME_HEADERS = {
+    "User-Agent": HEADERS["User-Agent"],
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": HEADERS["Accept-Language"],
+    "Referer": "https://kisskh.do/",
+    "Upgrade-Insecure-Requests": "1",
+    "Pragma": "no-cache",
+    "Cache-Control": "max-age=0",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Fetch-User": "?1",
 }
 
 class KissKHExtractor:
@@ -237,11 +259,33 @@ async def fetch_kisskh_api(path: str):
     if cached and now - cached[0] < CACHE_TTL:
         return cached[1]
 
+    last_fetch_debug.update({
+        "last_url": url,
+        "timestamp": now,
+        "homepage_init": None,
+        "direct_fetch": None,
+        "playwright_fetch": None,
+    })
+
     last_error = None
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
+            print(f"Initializing KissKH session via homepage: {WEB_URL}")
+            home_resp = await client.get(WEB_URL, headers=HOME_HEADERS)
+            last_fetch_debug["homepage_init"] = {
+                "status_code": home_resp.status_code,
+                "content_type": home_resp.headers.get("content-type"),
+                "url": home_resp.url,
+            }
+            print(f"Homepage init status: {home_resp.status_code}")
+
             print(f"Fetching KissKH directly: {url}")
             response = await client.get(url, headers=HEADERS)
+            last_fetch_debug["direct_fetch"] = {
+                "status_code": response.status_code,
+                "content_type": response.headers.get("content-type"),
+                "url": str(response.url),
+            }
             response.raise_for_status()
             actual_data = response.json()
             api_cache[path] = (now, actual_data)
@@ -249,11 +293,16 @@ async def fetch_kisskh_api(path: str):
             return actual_data
     except Exception as e:
         last_error = str(e)
+        last_fetch_debug["direct_fetch"] = {
+            "status_code": getattr(e, "response", None) and getattr(e.response, "status_code", None),
+            "error": last_error,
+        }
         print(f"Direct fetch failed: {last_error}")
 
     if kisskh.base_page and kisskh.context:
         try:
             print(f"Fallback: Using Playwright browser fetch: {url}")
+            last_fetch_debug["playwright_fetch"] = {"attempted": True, "status_code": None, "error": None}
             page = await kisskh.context.new_page()
             await page.goto(WEB_URL, wait_until="domcontentloaded", timeout=20000)
             result = await page.evaluate(
@@ -269,7 +318,9 @@ async def fetch_kisskh_api(path: str):
                 url,
             )
             await page.close()
+            last_fetch_debug["playwright_fetch"]["status_code"] = result["status"]
             if result["status"] != 200:
+                last_fetch_debug["playwright_fetch"]["error"] = f"Browser fetch failed ({result['status']})"
                 raise RuntimeError(f"Browser fetch failed ({result['status']}): {result['text']}")
             actual_data = json.loads(result["text"])
             api_cache[path] = (now, actual_data)
@@ -277,9 +328,14 @@ async def fetch_kisskh_api(path: str):
             return actual_data
         except Exception as e:
             last_error = str(e)
+            last_fetch_debug["playwright_fetch"]["error"] = last_error
             print(f"Playwright browser fetch failed: {last_error}")
 
-    return {"error": f"All fetch methods failed for {url}. Last error: {last_error}", "status": 503}
+    return {
+        "error": f"All fetch methods failed for {url}. Last error: {last_error}",
+        "status": 503,
+        "debug": last_fetch_debug,
+    }
 
 async def keep_alive():
     await asyncio.sleep(30)
@@ -334,6 +390,14 @@ async def root_endpoint():
 async def test():
     """Simple test endpoint to verify app is running"""
     return {"status": "ok", "message": "App is running!", "version": "5c92a1d"}
+
+@app.get("/api/debug")
+async def api_debug():
+    """Debug endpoint showing the last KissKH fetch sequence and status."""
+    return {
+        "status": "ok",
+        "last_fetch_debug": last_fetch_debug,
+    }
 
 @app.get("/api/")
 async def root():
