@@ -1,5 +1,7 @@
 // KissKH API service — single source of truth for all network calls
-export const KISSKH_BASE = (import.meta as any).env?.VITE_API_BASE_URL || "/api";
+// The frontend must always call the app's own backend proxy.
+// This prevents browser CORS blocking and avoids calling KissKH or proxies directly.
+export const KISSKH_BASE = "/api";
 export const KISSKH_DIRECT_BASE = "https://kisskh.do/api";
 export const CORS_PROXY = "https://corsproxy.io/?";
 
@@ -53,8 +55,16 @@ async function getJSON<T>(path: string): Promise<T> {
     if (!res.ok) {
       throw new Error(`Backend request failed (${res.status})`);
     }
+    const data = await res.json();
+    if (
+      data &&
+      typeof data === "object" &&
+      ("error" in data || (typeof (data as Record<string, unknown>).status === "number" && (data as Record<string, unknown>).status >= 400))
+    ) {
+      throw new Error(`Backend error response: ${JSON.stringify(data)}`);
+    }
     console.log(`[API] Backend successful!`);
-    return (await res.json()) as T;
+    return data as T;
   } catch (e) {
     console.warn("[API] Backend failed:", e);
   }
