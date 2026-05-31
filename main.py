@@ -224,26 +224,53 @@ class KissKHExtractor:
         return {"error": f"Failed after {max_retries} attempts", "status": 403}
 
 async def fetch_kisskh_api(path: str):
-    """Fetch from KissKH using CORS proxy to bypass Cloudflare"""
+    """Fetch from KissKH using Playwright browser context (bypasses Cloudflare)"""
+    # Try Playwright first (most reliable - uses real browser)
+    try:
+        if kisskh.base_page:
+            print(f"Using Playwright to fetch: {BASE_URL}{path}")
+            url = f"{BASE_URL}{path}"
+            page = await kisskh.context.new_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            data = await page.evaluate("() => document.body.innerText")
+            await page.close()
+            return json.loads(data)
+    except Exception as e:
+        print(f"Playwright fetch failed: {e}")
+    
+    # Fallback 1: Try multiple CORS proxies
+    cors_proxies = [
+        "https://corsproxy.io/?",
+        "https://api.allorigins.win/get?url=",
+    ]
+    
     async with httpx.AsyncClient() as client:
-        # Use corsproxy.io to bypass Cloudflare restrictions
+        for proxy in cors_proxies:
+            try:
+                url = f"{BASE_URL}{path}"
+                if "allorigins" in proxy:
+                    proxy_url = f"{proxy}{url}"
+                    response = await client.get(proxy_url, timeout=10)
+                    data = response.json()
+                    return json.loads(data.get("contents", "{}"))
+                else:
+                    proxy_url = f"{proxy}{url}"
+                    response = await client.get(proxy_url, headers=HEADERS, timeout=10)
+                    return response.json()
+            except Exception as e:
+                print(f"CORS proxy {proxy} failed: {e}")
+                continue
+    
+    # Fallback 2: Try direct request (may fail due to Cloudflare)
+    try:
         url = f"{BASE_URL}{path}"
-        proxy_url = f"https://corsproxy.io/?{url}"
-        
-        try:
-            response = await client.get(proxy_url, headers=HEADERS, timeout=15)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=HEADERS, timeout=15)
             response.raise_for_status()
             return response.json()
-        except Exception as e:
-            # Fallback to direct request if proxy fails
-            print(f"Proxy request failed: {e}, trying direct request...")
-            try:
-                response = await client.get(url, headers=HEADERS, timeout=15)
-                response.raise_for_status()
-                return response.json()
-            except Exception as e2:
-                print(f"Direct request also failed: {e2}")
-                return {"error": f"Failed to fetch from KissKH: {str(e2)}"}
+    except Exception as e:
+        print(f"Direct request failed: {e}")
+        return {"error": f"All fetch methods failed. Last error: {str(e)}"}
 
 async def keep_alive():
     await asyncio.sleep(30)
