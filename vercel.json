@@ -2,7 +2,10 @@
   "builds": [
     {
       "src": "package.json",
-      "use": "@vercel/static-build"
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist/client"
+      }
     },
     {
       "src": "main.py",
@@ -18,15 +21,15 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
+      "src": "^/api/(.*)$",
       "dest": "main.py"
     },
     {
-      "src": "/assets/(.*)",
+      "src": "^/assets/(.*)$",
       "dest": "dist/client/assets/$1"
     },
     {
-      "src": "/(.*)",
+      "src": "^/(.*)$",
       "dest": "dist/server/server.js"
     }
   ],
