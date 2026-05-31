@@ -384,19 +384,22 @@ async def api_browse(
 @app.get("/api/last-updates")
 async def get_last_updates():
     """Fetch last updates from KissKH"""
-    try:
-        async with httpx.AsyncClient() as client:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-                "Referer": "https://kisskh.do/",
-                "Accept": "application/json",
-                "Cookie": "_ga=GA1.1.1620135899.1780167286; _ga_R3CRN9FY5Q=GS2.1.1780222369.3.1.1780222369.0.0.0"
-            }
-            url = "https://kisskh.do/api/DramaList/LastUpdate?ispc=false"
+    async with httpx.AsyncClient() as client:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            "Referer": "https://kisskh.do/",
+            "Cookie": "_ga=GA1.1.1620135899.1780167286; _ga_R3CRN9FY5Q=GS2.1.1780222369.3.1.1780222369.0.0.0"
+        }
+        url = "https://kisskh.do/api/DramaList/LastUpdate?ispc=false"
+        try:
             response = await client.get(url, headers=headers, timeout=15)
+            # Print debugging info
+            print(f"Status Code: {response.status_code}")
+            print(f"Response Text: {response.text[:500]}")  # First 500 chars
             return response.json()
-    except Exception as e:
-        return {"error": str(e), "type": type(e).__name__}
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            return {"error": str(e), "raw_response": response.text if 'response' in locals() else "No response", "status": response.status_code if 'response' in locals() else None}
 
 @app.get("/api/resolve/{episode_id}")
 async def api_resolve(episode_id: str):
