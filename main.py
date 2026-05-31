@@ -272,6 +272,11 @@ app.add_middleware(
 #  Endpoints
 # ─────────────────────────────────────────────
 
+@app.get("/test")
+async def test():
+    """Simple test endpoint to verify app is running"""
+    return {"status": "ok", "message": "App is running!"}
+
 @app.get("/api/")
 async def root():
     return {"message": "KissKH Active. Engine operating cleanly via High-Speed direct API Pool!"}
@@ -371,29 +376,29 @@ async def api_browse(
 
 @app.get("/api/last-updates")
 async def get_last_updates():
-    async with httpx.AsyncClient() as client:
-        # Clean headers - remove HTTP/2 pseudo-headers like 'authority' and 'scheme'
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            "Referer": "https://kisskh.do/",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Sec-Ch-Ua": '"Not(A:Brand";v="8", "Chromium";v="144", "Google Chrome";v="144"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "Cookie": "_ga=GA1.1.1620135899.1780167286; _ga_R3CRN9FY5Q=GS2.1.1780222369.3.1.1780222369.0.0.0"
-        }
-        url = "https://kisskh.do/api/DramaList/LastUpdate?ispc=false"
-        try:
+    try:
+        async with httpx.AsyncClient() as client:
+            # Clean headers - remove HTTP/2 pseudo-headers like 'authority' and 'scheme'
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+                "Referer": "https://kisskh.do/",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Encoding": "gzip, deflate, br, zstd",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Sec-Ch-Ua": '"Not(A:Brand";v="8", "Chromium";v="144", "Google Chrome";v="144"',
+                "Sec-Ch-Ua-Mobile": "?0",
+                "Sec-Ch-Ua-Platform": '"Windows"',
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+                "Cookie": "_ga=GA1.1.1620135899.1780167286; _ga_R3CRN9FY5Q=GS2.1.1780222369.3.1.1780222369.0.0.0"
+            }
+            url = "https://kisskh.do/api/DramaList/LastUpdate?ispc=false"
             response = await client.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             return response.json()
-        except Exception as e:
-            return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/api/resolve/{episode_id}")
 async def api_resolve(episode_id: str):
