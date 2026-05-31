@@ -1,5 +1,7 @@
 // KissKH API service — single source of truth for all network calls
 export const KISSKH_BASE = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000";
+export const KISSKH_DIRECT_BASE = "https://kisskh.do/api";
+export const CORS_PROXY = "https://corsproxy.io/?";
 
 export interface DramaCard {
   id: string | number;
@@ -41,11 +43,28 @@ export interface ResolvedStream {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${KISSKH_BASE}${path}`);
-  if (!res.ok) {
-    throw new Error(`Request failed (${res.status}): ${path}`);
+  // Try backend API first
+  try {
+    const res = await fetch(`${KISSKH_BASE}${path}`);
+    if (!res.ok) {
+      throw new Error(`Backend request failed (${res.status})`);
+    }
+    return (await res.json()) as T;
+  } catch (e) {
+    console.warn("Backend API failed, falling back to direct CORS proxy:", e);
+    // Fallback to direct CORS proxy
+    const directUrl = `${KISSKH_DIRECT_BASE}${path}`;
+    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(directUrl)}`;
+    const res = await fetch(proxyUrl, {
+      headers: {
+        "Referer": "https://kisskh.do/"
+      }
+    });
+    if (!res.ok) {
+      throw new Error(`CORS proxy request failed (${res.status}): ${path}`);
+    }
+    return (await res.json()) as T;
   }
-  return (await res.json()) as T;
 }
 
 // Normalize varied API list shapes into a clean array of cards

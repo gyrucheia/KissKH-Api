@@ -224,11 +224,26 @@ class KissKHExtractor:
         return {"error": f"Failed after {max_retries} attempts", "status": 403}
 
 async def fetch_kisskh_api(path: str):
+    """Fetch from KissKH using CORS proxy to bypass Cloudflare"""
     async with httpx.AsyncClient() as client:
+        # Use corsproxy.io to bypass Cloudflare restrictions
         url = f"{BASE_URL}{path}"
-        response = await client.get(url, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-        return response.json()
+        proxy_url = f"https://corsproxy.io/?{url}"
+        
+        try:
+            response = await client.get(proxy_url, headers=HEADERS, timeout=15)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            # Fallback to direct request if proxy fails
+            print(f"Proxy request failed: {e}, trying direct request...")
+            try:
+                response = await client.get(url, headers=HEADERS, timeout=15)
+                response.raise_for_status()
+                return response.json()
+            except Exception as e2:
+                print(f"Direct request also failed: {e2}")
+                return {"error": f"Failed to fetch from KissKH: {str(e2)}"}
 
 async def keep_alive():
     await asyncio.sleep(30)
@@ -384,22 +399,7 @@ async def api_browse(
 @app.get("/api/last-updates")
 async def get_last_updates():
     """Fetch last updates from KissKH"""
-    async with httpx.AsyncClient() as client:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            "Referer": "https://kisskh.do/",
-            "Cookie": "_ga=GA1.1.1620135899.1780167286; _ga_R3CRN9FY5Q=GS2.1.1780222369.3.1.1780222369.0.0.0"
-        }
-        url = "https://kisskh.do/api/DramaList/LastUpdate?ispc=false"
-        try:
-            response = await client.get(url, headers=headers, timeout=15)
-            # Print debugging info
-            print(f"Status Code: {response.status_code}")
-            print(f"Response Text: {response.text[:500]}")  # First 500 chars
-            return response.json()
-        except Exception as e:
-            print(f"Error: {str(e)}")
-            return {"error": str(e), "raw_response": response.text if 'response' in locals() else "No response", "status": response.status_code if 'response' in locals() else None}
+    return await fetch_kisskh_api("/DramaList/LastUpdate?ispc=false")
 
 @app.get("/api/resolve/{episode_id}")
 async def api_resolve(episode_id: str):
