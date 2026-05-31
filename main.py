@@ -226,6 +226,7 @@ class KissKHExtractor:
 async def fetch_kisskh_api(path: str):
     """Fetch from KissKH using AllOrigins CORS proxy (best reliability)"""
     url = f"{BASE_URL}{path}"
+    last_error: str = ""
     
     # Primary: AllOrigins proxy (most reliable, no rate limits)
     async with httpx.AsyncClient() as client:
@@ -240,7 +241,8 @@ async def fetch_kisskh_api(path: str):
             print(f"AllOrigins fetch successful!")
             return actual_data
         except Exception as e:
-            print(f"AllOrigins fetch failed: {e}")
+            last_error = str(e)
+            print(f"AllOrigins fetch failed: {last_error}")
     
     # Fallback 1: Playwright browser (uses real browser context)
     try:
@@ -254,7 +256,8 @@ async def fetch_kisskh_api(path: str):
             print(f"Playwright fetch successful!")
             return actual_data
     except Exception as e:
-        print(f"Playwright fallback failed: {e}")
+        last_error = str(e)
+        print(f"Playwright fallback failed: {last_error}")
     
     # Fallback 2: corsproxy.io
     async with httpx.AsyncClient() as client:
@@ -267,7 +270,8 @@ async def fetch_kisskh_api(path: str):
             print(f"corsproxy.io fetch successful!")
             return actual_data
         except Exception as e:
-            print(f"corsproxy.io fallback failed: {e}")
+            last_error = str(e)
+            print(f"corsproxy.io fallback failed: {last_error}")
     
     # Fallback 3: Direct request (may fail due to Cloudflare)
     try:
@@ -279,9 +283,10 @@ async def fetch_kisskh_api(path: str):
             print(f"Direct request successful!")
             return actual_data
     except Exception as e:
-        print(f"Direct request failed: {e}")
+        last_error = str(e)
+        print(f"Direct request failed: {last_error}")
     
-    return {"error": f"All fetch methods failed for {url}. Last error: {str(e)}", "status": 503}
+    return {"error": f"All fetch methods failed for {url}. Last error: {last_error}", "status": 503}
 
 async def keep_alive():
     await asyncio.sleep(30)
