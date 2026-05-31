@@ -20,7 +20,10 @@ api_cache: dict[str, tuple[float, Any]] = {}
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     "Referer": "https://kisskh.do/",
-    "Accept": "application/json",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "en-US,en;q=0.9",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin": "https://kisskh.do",
 }
 
 class KissKHExtractor:
@@ -234,6 +237,7 @@ async def fetch_kisskh_api(path: str):
     if cached and now - cached[0] < CACHE_TTL:
         return cached[1]
 
+    last_error = None
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
             print(f"Fetching KissKH directly: {url}")
@@ -249,18 +253,31 @@ async def fetch_kisskh_api(path: str):
 
     if kisskh.base_page and kisskh.context:
         try:
-            print(f"Fallback: Using Playwright to fetch: {url}")
+            print(f"Fallback: Using Playwright browser fetch: {url}")
             page = await kisskh.context.new_page()
-            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            data = await page.evaluate("() => document.body.innerText")
+            await page.goto(WEB_URL, wait_until="domcontentloaded", timeout=20000)
+            result = await page.evaluate(
+                "async (url) => {\n"
+                "  const res = await fetch(url, { headers: {\n"
+                "    'Accept': 'application/json, text/javascript, */*; q=0.01',\n"
+                "    'X-Requested-With': 'XMLHttpRequest',\n"
+                "    'Referer': 'https://kisskh.do/',\n"
+                "    'Origin': 'https://kisskh.do'\n"
+                "  }});\n"
+                "  return { status: res.status, text: await res.text() };\n"
+                "}",
+                url,
+            )
             await page.close()
-            actual_data = json.loads(data)
+            if result["status"] != 200:
+                raise RuntimeError(f"Browser fetch failed ({result['status']}): {result['text']}")
+            actual_data = json.loads(result["text"])
             api_cache[path] = (now, actual_data)
-            print(f"Playwright fetch successful: {path}")
+            print(f"Playwright browser fetch successful: {path}")
             return actual_data
         except Exception as e:
             last_error = str(e)
-            print(f"Playwright fallback failed: {last_error}")
+            print(f"Playwright browser fetch failed: {last_error}")
 
     return {"error": f"All fetch methods failed for {url}. Last error: {last_error}", "status": 503}
 
