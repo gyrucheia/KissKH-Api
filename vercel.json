@@ -6,9 +6,17 @@
     }
   ],
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "main.py"
-    }
+    { "src": "/api/last-updates", "dest": "main.py" },
+    { "src": "/api/search", "dest": "main.py" },
+    { "src": "/api/info/(?<drama_id>[^/]+)", "dest": "main.py" },
+    { "src": "/api/home/latest", "dest": "main.py" },
+    { "src": "/api/home/popular", "dest": "main.py" },
+    { "src": "/api/home/new", "dest": "main.py" },
+    { "src": "/api/home/ongoing", "dest": "main.py" },
+    { "src": "/api/home/completed", "dest": "main.py" },
+    { "src": "/api/browse", "dest": "main.py" },
+    { "src": "/api/resolve/(?<episode_id>[^/]+)", "dest": "main.py" },
+    { "src": "/api/", "dest": "main.py" },
+    { "src": "/(.*)", "dest": "main.py" }
   ]
 }
