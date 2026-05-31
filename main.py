@@ -121,6 +121,49 @@ class KissKHExtractor:
         if self.context: await self.context.close()
         if self.playwright: await self.playwright.stop()
 
+    async def ensure_started(self):
+        if self.playwright and self.context and self.base_page:
+            return
+        try:
+            await self.start()
+        except Exception as e:
+            print(f"Playwright start failed during fallback: {e}")
+
+    async def browser_fetch_api(self, url: str):
+        if not self.context:
+            raise RuntimeError("Playwright context is not available for browser fetch")
+
+        page = await self.context.new_page()
+        try:
+            await page.goto(WEB_URL, wait_until="domcontentloaded", timeout=30000)
+            for _ in range(6):
+                title = await page.title()
+                if "Just a moment" in title or "Cloudflare" in title:
+                    print("Cloudflare verification active during browser fetch, waiting 5s...")
+                    await page.mouse.move(100, 100)
+                    await page.mouse.down()
+                    await page.mouse.up()
+                    await page.wait_for_timeout(5000)
+                else:
+                    break
+
+            result = await page.evaluate(
+                "async (apiUrl) => {"
+                "  const res = await fetch(apiUrl, { headers: {"
+                "    'Accept': 'application/json, text/javascript, */*; q=0.01',"
+                "    'X-Requested-With': 'XMLHttpRequest',"
+                "    'Referer': 'https://kisskh.do/',"
+                "    'Origin': 'https://kisskh.do',"
+                "    'Accept-Language': 'en-US,en;q=0.9'"
+                "  }, credentials: 'include' });"
+                "  return { status: res.status, text: await res.text() };"
+                "}",
+                url,
+            )
+            return result
+        finally:
+            await page.close()
+
     async def get_episode_stream(self, episode_id: str, max_retries: int = 3):
         for attempt in range(max_retries):
             page = await self.context.new_page()
@@ -275,9 +318,13 @@ async def fetch_kisskh_api(path: str):
             last_fetch_debug["homepage_init"] = {
                 "status_code": home_resp.status_code,
                 "content_type": home_resp.headers.get("content-type"),
-                "url": home_resp.url,
+                "url": str(home_resp.url),
+                "body_snippet": home_resp.text[:320],
             }
             print(f"Homepage init status: {home_resp.status_code}")
+
+            if home_resp.status_code != 200:
+                raise RuntimeError(f"Homepage init returned {home_resp.status_code}")
 
             print(f"Fetching KissKH directly: {url}")
             response = await client.get(url, headers=HEADERS)
@@ -285,6 +332,7 @@ async def fetch_kisskh_api(path: str):
                 "status_code": response.status_code,
                 "content_type": response.headers.get("content-type"),
                 "url": str(response.url),
+                "body_snippet": response.text[:320],
             }
             response.raise_for_status()
             actual_data = response.json()
@@ -298,6 +346,28 @@ async def fetch_kisskh_api(path: str):
             "error": last_error,
         }
         print(f"Direct fetch failed: {last_error}")
+
+    if not kisskh.base_page or not kisskh.context:
+        await kisskh.ensure_started()
+
+    if kisskh.base_page and kisskh.context:
+        try:
+            print(f"Fallback: Using Playwright browser fetch: {url}")
+            last_fetch_debug["playwright_fetch"] = {"attempted": True, "status_code": None, "error": None}
+            result = await kisskh.browser_fetch_api(url)
+            last_fetch_debug["playwright_fetch"]["status_code"] = result.get("status")
+            if result.get("status") != 200:
+                last_fetch_debug["playwright_fetch"]["error"] = f"Browser fetch returned {result.get('status')}"
+                raise RuntimeError(f"Browser fetch failed ({result.get('status')}): {result.get('text')}")
+
+            actual_data = json.loads(result["text"])
+            api_cache[path] = (now, actual_data)
+            print(f"Playwright browser fetch successful: {path}")
+            return actual_data
+        except Exception as e:
+            last_error = str(e)
+            last_fetch_debug["playwright_fetch"]["error"] = last_error
+            print(f"Playwright browser fetch failed: {last_error}")
 
     if kisskh.base_page and kisskh.context:
         try:
