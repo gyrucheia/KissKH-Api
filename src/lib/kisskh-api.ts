@@ -43,28 +43,59 @@ export interface ResolvedStream {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  // Try backend API first
+  const backendUrl = `${KISSKH_BASE}${path}`;
+  const directUrl = `${KISSKH_DIRECT_BASE}${path}`;
+  
+  // Primary: Backend API (cached, fastest)
   try {
-    const res = await fetch(`${KISSKH_BASE}${path}`);
+    console.log(`[API] Trying backend: ${backendUrl}`);
+    const res = await fetch(backendUrl);
     if (!res.ok) {
       throw new Error(`Backend request failed (${res.status})`);
     }
+    console.log(`[API] Backend successful!`);
     return (await res.json()) as T;
   } catch (e) {
-    console.warn("Backend API failed, falling back to direct CORS proxy:", e);
-    // Fallback to direct CORS proxy
-    const directUrl = `${KISSKH_DIRECT_BASE}${path}`;
-    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(directUrl)}`;
+    console.warn("[API] Backend failed:", e);
+  }
+
+  // Fallback 1: AllOrigins CORS proxy (most reliable, no rate limits)
+  try {
+    console.log(`[API] Trying AllOrigins proxy: ${directUrl}`);
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(directUrl)}`;
+    const res = await fetch(proxyUrl);
+    if (!res.ok) {
+      throw new Error(`AllOrigins request failed (${res.status})`);
+    }
+    const data = await res.json();
+    // AllOrigins wraps response in "contents" field
+    const actualData = JSON.parse(data.contents);
+    console.log(`[API] AllOrigins successful!`);
+    return actualData as T;
+  } catch (e) {
+    console.warn("[API] AllOrigins fallback failed:", e);
+  }
+
+  // Fallback 2: corsproxy.io
+  try {
+    console.log(`[API] Trying corsproxy.io: ${directUrl}`);
+    const proxyUrl = `https://corsproxy.io/?${directUrl}`;
     const res = await fetch(proxyUrl, {
       headers: {
         "Referer": "https://kisskh.do/"
       }
     });
     if (!res.ok) {
-      throw new Error(`CORS proxy request failed (${res.status}): ${path}`);
+      throw new Error(`corsproxy.io request failed (${res.status})`);
     }
+    console.log(`[API] corsproxy.io successful!`);
     return (await res.json()) as T;
+  } catch (e) {
+    console.warn("[API] corsproxy.io fallback failed:", e);
   }
+
+  // All methods exhausted
+  throw new Error(`Failed to fetch ${path} from all sources. Please check your connection.`);
 }
 
 // Normalize varied API list shapes into a clean array of cards

@@ -224,53 +224,64 @@ class KissKHExtractor:
         return {"error": f"Failed after {max_retries} attempts", "status": 403}
 
 async def fetch_kisskh_api(path: str):
-    """Fetch from KissKH using Playwright browser context (bypasses Cloudflare)"""
-    # Try Playwright first (most reliable - uses real browser)
+    """Fetch from KissKH using AllOrigins CORS proxy (best reliability)"""
+    url = f"{BASE_URL}{path}"
+    
+    # Primary: AllOrigins proxy (most reliable, no rate limits)
+    async with httpx.AsyncClient() as client:
+        try:
+            proxy_url = f"https://api.allorigins.win/get?url={url}"
+            print(f"Fetching via AllOrigins: {url}")
+            response = await client.get(proxy_url, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            # AllOrigins wraps response in "contents"
+            actual_data = json.loads(data.get("contents", "{}"))
+            print(f"AllOrigins fetch successful!")
+            return actual_data
+        except Exception as e:
+            print(f"AllOrigins fetch failed: {e}")
+    
+    # Fallback 1: Playwright browser (uses real browser context)
     try:
         if kisskh.base_page:
-            print(f"Using Playwright to fetch: {BASE_URL}{path}")
-            url = f"{BASE_URL}{path}"
+            print(f"Fallback: Using Playwright to fetch: {url}")
             page = await kisskh.context.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             data = await page.evaluate("() => document.body.innerText")
             await page.close()
-            return json.loads(data)
+            actual_data = json.loads(data)
+            print(f"Playwright fetch successful!")
+            return actual_data
     except Exception as e:
-        print(f"Playwright fetch failed: {e}")
+        print(f"Playwright fallback failed: {e}")
     
-    # Fallback 1: Try multiple CORS proxies
-    cors_proxies = [
-        "https://corsproxy.io/?",
-        "https://api.allorigins.win/get?url=",
-    ]
-    
+    # Fallback 2: corsproxy.io
     async with httpx.AsyncClient() as client:
-        for proxy in cors_proxies:
-            try:
-                url = f"{BASE_URL}{path}"
-                if "allorigins" in proxy:
-                    proxy_url = f"{proxy}{url}"
-                    response = await client.get(proxy_url, timeout=10)
-                    data = response.json()
-                    return json.loads(data.get("contents", "{}"))
-                else:
-                    proxy_url = f"{proxy}{url}"
-                    response = await client.get(proxy_url, headers=HEADERS, timeout=10)
-                    return response.json()
-            except Exception as e:
-                print(f"CORS proxy {proxy} failed: {e}")
-                continue
+        try:
+            proxy_url = f"https://corsproxy.io/?{url}"
+            print(f"Fallback: Trying corsproxy.io: {url}")
+            response = await client.get(proxy_url, headers=HEADERS, timeout=10)
+            response.raise_for_status()
+            actual_data = response.json()
+            print(f"corsproxy.io fetch successful!")
+            return actual_data
+        except Exception as e:
+            print(f"corsproxy.io fallback failed: {e}")
     
-    # Fallback 2: Try direct request (may fail due to Cloudflare)
+    # Fallback 3: Direct request (may fail due to Cloudflare)
     try:
-        url = f"{BASE_URL}{path}"
         async with httpx.AsyncClient() as client:
+            print(f"Final fallback: Direct request to: {url}")
             response = await client.get(url, headers=HEADERS, timeout=15)
             response.raise_for_status()
-            return response.json()
+            actual_data = response.json()
+            print(f"Direct request successful!")
+            return actual_data
     except Exception as e:
         print(f"Direct request failed: {e}")
-        return {"error": f"All fetch methods failed. Last error: {str(e)}"}
+    
+    return {"error": f"All fetch methods failed for {url}. Last error: {str(e)}", "status": 503}
 
 async def keep_alive():
     await asyncio.sleep(30)
