@@ -28,6 +28,7 @@ function useRow(key: string, fn: () => Promise<unknown[]>) {
 
 function HomePage() {
   const popular = useRow("popular", () => api.popular(1, 18));
+  const lastUpdates = useRow("last-updates", () => api.lastUpdates());
   const latest = useRow("latest", () => api.latest(1, 18));
   const newest = useRow("new", () => api.newest(1, 18));
   const ongoing = useRow("ongoing", () => api.ongoing(1, 18));
@@ -48,9 +49,9 @@ function HomePage() {
         />
         <DramaRow
           title="Latest Updates"
-          dramas={latest.data as never}
-          loading={latest.isLoading}
-          error={latest.error ? (latest.error as Error).message : null}
+          dramas={lastUpdates.data as never}
+          loading={lastUpdates.isLoading}
+          error={lastUpdates.error ? (lastUpdates.error as Error).message : null}
         />
         <DramaRow
           title="New Arrivals"

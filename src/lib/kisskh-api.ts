@@ -125,6 +125,8 @@ export function getPoster(d: DramaCard | undefined | null): string {
 export const api = {
   popular: (page = 1, pageSize = 20) =>
     getJSON(`/home/popular?page=${page}&page_size=${pageSize}`).then(normalizeList),
+  lastUpdates: () =>
+    getJSON(`/last-updates`).then(normalizeList),
   latest: (page = 1, pageSize = 20) =>
     getJSON(`/home/latest?page=${page}&page_size=${pageSize}`).then(normalizeList),
   newest: (page = 1, pageSize = 20) =>
