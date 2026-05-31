@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+import urllib.parse
 import httpx
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -228,21 +229,20 @@ async def fetch_kisskh_api(path: str):
     url = f"{BASE_URL}{path}"
     last_error: str = ""
     
-    # Primary: AllOrigins proxy (most reliable, no rate limits)
-    async with httpx.AsyncClient() as client:
+    # Primary: AllOrigins raw proxy (best chance to return actual JSON)
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         try:
-            proxy_url = f"https://api.allorigins.win/get?url={url}"
-            print(f"Fetching via AllOrigins: {url}")
-            response = await client.get(proxy_url, timeout=15)
+            encoded_url = urllib.parse.quote(url, safe="")
+            proxy_url = f"https://api.allorigins.win/raw?url={encoded_url}"
+            print(f"Fetching via AllOrigins raw: {url}")
+            response = await client.get(proxy_url, timeout=20)
             response.raise_for_status()
-            data = response.json()
-            # AllOrigins wraps response in "contents"
-            actual_data = json.loads(data.get("contents", "{}"))
-            print(f"AllOrigins fetch successful!")
+            actual_data = json.loads(response.text)
+            print(f"AllOrigins raw fetch successful!")
             return actual_data
         except Exception as e:
             last_error = str(e)
-            print(f"AllOrigins fetch failed: {last_error}")
+            print(f"AllOrigins raw fetch failed: {last_error}")
     
     # Fallback 1: Playwright browser (uses real browser context)
     try:
@@ -260,11 +260,12 @@ async def fetch_kisskh_api(path: str):
         print(f"Playwright fallback failed: {last_error}")
     
     # Fallback 2: corsproxy.io
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         try:
-            proxy_url = f"https://corsproxy.io/?{url}"
+            encoded_url = urllib.parse.quote(url, safe="")
+            proxy_url = f"https://corsproxy.io/?{encoded_url}"
             print(f"Fallback: Trying corsproxy.io: {url}")
-            response = await client.get(proxy_url, headers=HEADERS, timeout=10)
+            response = await client.get(proxy_url, headers=HEADERS, timeout=15)
             response.raise_for_status()
             actual_data = response.json()
             print(f"corsproxy.io fetch successful!")
@@ -275,9 +276,9 @@ async def fetch_kisskh_api(path: str):
     
     # Fallback 3: Direct request (may fail due to Cloudflare)
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             print(f"Final fallback: Direct request to: {url}")
-            response = await client.get(url, headers=HEADERS, timeout=15)
+            response = await client.get(url, headers=HEADERS, timeout=20)
             response.raise_for_status()
             actual_data = response.json()
             print(f"Direct request successful!")
